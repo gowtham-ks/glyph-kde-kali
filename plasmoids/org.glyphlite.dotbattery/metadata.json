@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "System Information",
+    "Description": "Battery level as a dot ring; says so politely when there is no battery.",
+    "Icon": "battery",
+    "Id": "org.glyphlite.dotbattery",
+    "License": "MIT",
+    "Name": "Glyph Dot Battery",
+    "Version": "1.2.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

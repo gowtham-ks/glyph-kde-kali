@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""glyph-lite-customize - change how Glyph Lite looks, then regenerate every theme file.
+
+  glyph-lite-customize wizard            answer a few questions
+  glyph-lite-customize preset [name]     list presets, or apply one (ice, amber, mint, violet, pink, oled, ...)
+  glyph-lite-customize set KEY VALUE     e.g. accent #FF6A00 | wallpaper.style spiral | rofi.radius 12
+  glyph-lite-customize get [KEY]         show one value, or everything
+  glyph-lite-customize apply             write the files into your home (and refresh the current mode)
+  glyph-lite-customize layout [name]     list or choose a top bar / dock layout (default, compact, side-dock, classic, ...)
+  glyph-lite-customize preview [DIR]     render dark and light wallpaper previews
+  glyph-lite-customize export DIR        theme files for Windows Terminal, macOS iTerm2, Alacritty, VS Code, X resources
+  glyph-lite-customize reset             go back to the defaults
+
+Settings live in ~/.config/glyph-lite/theme.conf (plain text, edit by hand if you like).
+"""
+import configparser
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+CONF = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "glyph-lite")
+for cand in (os.path.join(HERE, "..", "lib"), os.path.join(DATA, "glyph-lite", "lib")):
+    if os.path.exists(os.path.join(cand, "glyphgen.py")):
+        sys.path.insert(0, os.path.abspath(cand))
+        break
+import glyphgen as gg  # noqa: E402
+
+CONFIG = os.path.join(CONF, "glyph-lite", "theme.conf")
+
+
+# ------------------------------------------------------------------ config file
+def flat_defaults():
+    out = {"theme.accent": gg.DEFAULTS["accent"]}
+    for sec, vals in gg.DEFAULTS.items():
+        if isinstance(vals, dict):
+            for k, v in vals.items():
+                out[f"{sec}.{k}"] = v
+    return out
+
+
+def to_nested(flat):
+    cfg = {"accent": flat["theme.accent"]}
+    for key, v in flat.items():
+        if key == "theme.accent":
+            continue
+        sec, k = key.split(".", 1)
+        cfg.setdefault(sec, {})[k] = v
+    return cfg
+
+
+def cast(key, text, default):
+    if isinstance(default, bool):
+        return str(text).strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(default, int):
+        return int(float(text))
+    if isinstance(default, float):
+        return float(text)
+    return str(text).strip()
+
+
+def load():
+    flat = flat_defaults()
+    if os.path.exists(CONFIG):
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.optionxform = str
+        cp.read(CONFIG)
+        for sec in cp.sections():
+            for k, v in cp.items(sec):
+                key = f"{sec}.{k}"
+                if key in flat:
+                    flat[key] = cast(key, v, flat[key])
+    return flat
+
+
+def save(flat):
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.optionxform = str
+    for key, v in flat.items():
+        sec, k = key.split(".", 1)
+        if not cp.has_section(sec):
+            cp.add_section(sec)
+        cp.set(sec, k, str(v))
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG, "w") as f:
+        f.write("# Glyph Lite settings. Run `glyph-lite-customize apply` after editing.\n")
+        cp.write(f)
+
+
+def check(flat):
+    problems = gg.validate(to_nested(flat))
+    if problems:
+        for p in problems:
+            print("  problem:", p, file=sys.stderr)
+        sys.exit(1)
+
+
+# ------------------------------------------------------------------ apply
+def installed():
+    return os.path.exists(os.path.join(STATE, "manifest"))
+
+
+def copy(src_root, rel, dest):
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(os.path.join(src_root, rel), dest)
+
+
+def apply(flat, refresh=True, force_mode=False):
+    check(flat)
+    cfg = to_nested(flat)
+    if not installed():
+        print("Glyph Lite is not installed yet: run ./install.sh (or ./setup.sh) first.", file=sys.stderr)
+        sys.exit(1)
+    tmp = tempfile.mkdtemp()
+    try:
+        files = gg.text_files(cfg)
+        files.update(gg.main_wallpapers(cfg))
+        gg.write_files(files, tmp)
+        n = 0
+        for rel in files:
+            base = os.path.basename(rel)
+            dests = []
+            if rel.startswith("configs/color-schemes/"):
+                dests = [os.path.join(DATA, "color-schemes", base)]
+            elif rel.startswith("configs/konsole/"):
+                dests = [os.path.join(DATA, "konsole", base)]
+            elif rel.startswith("configs/kitty/"):
+                dests = [os.path.join(CONF, "kitty", base)]
+            elif rel.startswith("configs/xfce4-terminal/"):
+                dests = [os.path.join(DATA, "xfce4", "terminal", "colorschemes", base)]
+            elif rel.startswith("configs/rofi/"):
+                dests = [os.path.join(CONF, "rofi", base)]
+            elif rel.startswith("configs/gtk/"):
+                dests = [os.path.join(CONF, "gtk-4.0", base), os.path.join(CONF, "gtk-3.0", base)]
+            elif rel.startswith("layout/"):
+                dests = [os.path.join(DATA, "glyph-lite", "layout", base)]
+            elif rel.startswith("configs/fastfetch/"):
+                dests = [os.path.join(CONF, "fastfetch", base)]
+            elif rel.startswith("assets/wallpapers/"):
+                kn = "Dark" if "Dark" in base else "Light"
+                plain = base.endswith("plain.png")
+                name = f"GlyphLite-{kn}" + ("-Plain" if plain else "")
+                dests = [os.path.join(DATA, "glyph-lite", "wallpapers", name + ".png")]
+                pkg = os.path.join(DATA, "wallpapers", name, "contents", "images")
+                if os.path.isdir(pkg):
+                    dests.append(os.path.join(pkg, "1920x1080.png"))
+            for d in dests:
+                copy(tmp, rel, d)
+                n += 1
+        print(f"Wrote {n} files.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    # kitty/rofi/gtk 'current' copies follow the mode script
+    mode_bin = os.path.join(os.path.expanduser("~"), ".local", "bin", "glyph-lite-mode")
+    if refresh and os.path.exists(mode_bin):
+        mode = flat["mode.default"] if (force_mode or not os.path.exists(os.path.join(STATE, "mode"))) else open(os.path.join(STATE, "mode")).read().strip()
+        subprocess.call([mode_bin, mode], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"Refreshed {mode} mode. If some colors look old, log out and in once.")
+
+
+# ------------------------------------------------------------------ commands
+def cmd_get(flat, args):
+    if args:
+        key = "theme.accent" if args[0] == "accent" else args[0]
+        if key not in flat:
+            sys.exit(f"Unknown key: {args[0]}")
+        print(flat[key])
+        return
+    for k in sorted(flat):
+        print(f"{'accent' if k == 'theme.accent' else k} = {flat[k]}")
+
+
+def cmd_set(flat, args):
+    if len(args) != 2:
+        sys.exit("usage: glyph-lite-customize set KEY VALUE")
+    key = "theme.accent" if args[0] == "accent" else args[0]
+    if key not in flat:
+        sys.exit(f"Unknown key: {args[0]} (see `glyph-lite-customize get`)")
+    try:
+        flat[key] = cast(key, args[1], flat_defaults()[key])
+    except ValueError:
+        sys.exit(f"{args[0]} needs a different kind of value")
+    check(flat)
+    save(flat)
+    print(f"{args[0]} = {flat[key]}  (run `glyph-lite-customize apply` to use it)")
+
+
+def cmd_preset(flat, args):
+    if not args or args[0] == "list":
+        print("Presets:", ", ".join(gg.PRESETS))
+        return
+    if args[0] not in gg.PRESETS:
+        sys.exit("Unknown preset. Try: " + ", ".join(gg.PRESETS))
+    over = gg.PRESETS[args[0]]
+    for sec, vals in over.items():
+        if isinstance(vals, dict):
+            for k, v in vals.items():
+                flat[f"{sec}.{k}"] = v
+        else:
+            flat["theme.accent" if sec == "accent" else sec] = vals
+    save(flat)
+    print(f"Preset '{args[0]}' saved.")
+    apply(flat)
+
+
+def cmd_layout(flat, args):
+    if not args or args[0] == "list":
+        print("Layout presets:", ", ".join(gg.LAYOUT_PRESETS))
+        print("Items you can use in layout.bar_items / layout.dock_items:", ", ".join(gg.LAYOUT_WIDGETS))
+        print("Example: glyph-lite-customize set layout.bar_items pager,spacer,island,spacer,clock,tray")
+        return
+    if args[0] not in gg.LAYOUT_PRESETS:
+        sys.exit("Unknown layout preset. Try: " + ", ".join(gg.LAYOUT_PRESETS))
+    base = {k: v for k, v in gg.DEFAULTS["layout"].items()}
+    base.update(gg.LAYOUT_PRESETS[args[0]])
+    for k, v in base.items():
+        flat[f"layout.{k}"] = v
+    check(flat)
+    save(flat)
+    print(f"Layout preset '{args[0]}' saved.")
+    apply(flat)
+    print("To put it on screen (inside Plasma): glyph-lite-layout reapply")
+
+
+def ask(prompt, default, choices=None):
+    hint = f" [{default}]"
+    if choices:
+        hint = f" ({'/'.join(choices)}) [{default}]"
+    try:
+        a = input(prompt + hint + " ").strip()
+    except EOFError:
+        a = ""
+    a = a or str(default)
+    if choices and a not in choices:
+        print("  not an option, keeping", default)
+        return str(default)
+    return a
+
+
+def cmd_wizard(flat, args):
+    print("Glyph Lite customizer. Press Enter to keep the value in brackets.\n")
+    print("Accent presets:", ", ".join(k for k, v in gg.PRESETS.items() if "accent" in v), "or any #RRGGBB")
+    a = ask("Accent color", flat["theme.accent"])
+    flat["theme.accent"] = gg.PRESETS[a]["accent"] if a in gg.PRESETS and "accent" in gg.PRESETS[a] else a
+    flat["wallpaper.style"] = ask("Wallpaper style", flat["wallpaper.style"], list(gg.STYLES))
+    flat["wallpaper.rings"] = int(ask("Number of rings (1-8, ring style)", flat["wallpaper.rings"]))
+    flat["wallpaper.dot"] = float(ask("Dot size (2-12)", flat["wallpaper.dot"]))
+    flat["mode.default"] = ask("Start in", flat["mode.default"], ["dark", "light"])
+    flat["rofi.radius"] = int(ask("Launcher corner radius (0-60)", flat["rofi.radius"]))
+    flat["font.mono"] = ask("Monospace font", flat["font.mono"])
+    check(flat)
+    save(flat)
+    if ask("Apply now?", "y", ["y", "n"]) == "y":
+        apply(flat, force_mode=True)
+
+
+def cmd_preview(flat, args):
+    check(flat)
+    out = args[0] if args else os.path.join(tempfile.gettempdir(), "glyph-preview")
+    cfg = to_nested(flat)
+    files = {f"preview-{k}.png": gg.wallpaper_png(cfg, k, None, "960x540") for k in ("dark", "light")}
+    for p in gg.write_files(files, out):
+        print(p)
+
+
+def cmd_export(flat, args):
+    if not args:
+        sys.exit("usage: glyph-lite-customize export DIR")
+    check(flat)
+    cfg = to_nested(flat)
+    files = gg.export_files(cfg)
+    for k, kn in (("dark", "Dark"), ("light", "Light")):
+        files[f"wallpapers/glyph-{k}.png"] = gg.wallpaper_png(cfg, k)
+    files["README.txt"] = (
+        "Glyph Lite exports (made with glyph-lite-customize)\n\n"
+        "exports/windows-terminal.json   Windows Terminal: paste the two entries into \"schemes\" in settings.json\n"
+        "exports/iterm2-*.itermcolors    macOS iTerm2: Settings > Profiles > Colors > Color Presets > Import\n"
+        "exports/alacritty-*.toml        Alacritty (any OS): add to `general.import` in alacritty.toml\n"
+        "exports/Xresources-*            X11 terminals: append to ~/.Xresources, then run `xrdb -merge ~/.Xresources`\n"
+        "exports/vscode-settings-*.json  VS Code: merge into your settings.json\n"
+        "wallpapers/                     PNG wallpapers for any desktop\n")
+    for p in gg.write_files(files, args[0]):
+        pass
+    print(f"Wrote {len(files)} files to {args[0]}")
+
+
+def cmd_reset(flat, args):
+    if os.path.exists(CONFIG):
+        os.remove(CONFIG)
+    print("Settings reset to defaults.")
+    if installed():
+        apply(flat_defaults())
+
+
+def main():
+    cmds = {"wizard": cmd_wizard, "preset": cmd_preset, "set": cmd_set, "get": cmd_get,
+            "preview": cmd_preview, "export": cmd_export, "reset": cmd_reset, "layout": cmd_layout}
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return
+    cmd = argv[0]
+    if cmd == "apply":
+        apply(load(), refresh="--no-reload" not in argv)
+    elif cmd in cmds:
+        cmds[cmd](load(), argv[1:])
+    else:
+        sys.exit(f"Unknown command: {cmd}. Try --help")
+
+
+if __name__ == "__main__":
+    main()

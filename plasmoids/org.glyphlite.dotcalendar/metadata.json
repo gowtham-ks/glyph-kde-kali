@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "Date and Time",
+    "Description": "Month calendar with a red marker on today.",
+    "Icon": "office-calendar",
+    "Id": "org.glyphlite.dotcalendar",
+    "License": "MIT",
+    "Name": "Glyph Dot Calendar",
+    "Version": "1.2.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

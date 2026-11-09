@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "Windows and Tasks",
+    "Description": "Pill-shaped clock for a panel; click for a popup with meters and a dark/light switch.",
+    "Icon": "preferences-desktop-theme",
+    "Id": "org.glyphlite.island",
+    "License": "MIT",
+    "Name": "Glyph Island",
+    "Version": "1.2.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

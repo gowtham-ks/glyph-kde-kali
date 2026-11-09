@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# glyph-lite-mode - switch Glyph Lite between dark and light.
+#   glyph-lite-mode dark|light|toggle|status  [ring|plain]
+set -u
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/glyph-lite"
+mkdir -p "$STATE"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() { echo "usage: glyph-lite-mode dark|light|toggle|status [ring|plain]"; }
+
+cur="$(cat "$STATE/mode" 2>/dev/null || echo dark)"
+style="${2:-$(cat "$STATE/style" 2>/dev/null || echo ring)}"
+case "${1:-toggle}" in
+  dark|light) mode="$1" ;;
+  toggle) if [ "$cur" = dark ]; then mode=light; else mode=dark; fi ;;
+  status) echo "$cur ($style)"; exit 0 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage; exit 2 ;;
+esac
+case "$style" in ring|plain) ;; *) usage; exit 2 ;; esac
+
+if [ "$mode" = dark ]; then
+  scheme=GlyphLite;      wp="GlyphLite-Dark";  profile=GlyphLite
+else
+  scheme=GlyphLiteLight; wp="GlyphLite-Light"; profile=GlyphLiteLight
+fi
+[ "$style" = plain ] && wp="$wp-Plain"
+
+# Plasma colors + wallpaper
+have plasma-apply-colorscheme && plasma-apply-colorscheme "$scheme" >/dev/null 2>&1
+img="$DATA/wallpapers/$wp/contents/images/1920x1080.png"
+if [ -f "$img" ] && have plasma-apply-wallpaperimage; then plasma-apply-wallpaperimage "$img" >/dev/null 2>&1; fi
+
+# Konsole default profile
+kw=""; have kwriteconfig6 && kw=kwriteconfig6; [ -z "$kw" ] && have kwriteconfig5 && kw=kwriteconfig5
+[ -n "$kw" ] && "$kw" --file konsolerc --group "Desktop Entry" --key DefaultProfile "$profile.profile"
+
+# kitty + rofi follow the mode
+if [ -f "$CONF/kitty/glyph-$mode.conf" ]; then
+  cp -f "$CONF/kitty/glyph-$mode.conf" "$CONF/kitty/glyph.conf"
+  pkill -USR1 -x kitty 2>/dev/null || true
+fi
+[ -f "$CONF/rofi/glyph-$mode.rasi" ] && cp -f "$CONF/rofi/glyph-$mode.rasi" "$CONF/rofi/glyph.rasi"
+
+# ---- other desktops: wallpaper + terminal
+generic="$DATA/glyph-lite/wallpapers/$wp.png"
+case "$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')" in
+  *xfce*)
+    if have xfconf-query && [ -f "$generic" ]; then
+      xfconf-query -c xfce4-desktop -l 2>/dev/null | grep -E '/last-image$' | while read -r prop; do
+        xfconf-query -c xfce4-desktop -p "$prop" -s "$generic" 2>/dev/null
+      done
+    fi ;;
+  *gnome*|*unity*|*ubuntu*)
+    if have gsettings; then
+      [ -f "$generic" ] && { gsettings set org.gnome.desktop.background picture-uri "file://$generic"; gsettings set org.gnome.desktop.background picture-uri-dark "file://$generic"; } 2>/dev/null
+      if [ "$mode" = dark ]; then gsettings set org.gnome.desktop.interface color-scheme prefer-dark 2>/dev/null
+      else gsettings set org.gnome.desktop.interface color-scheme default 2>/dev/null; fi
+    fi ;;
+esac
+
+# xfce4-terminal: copy the preset's colors into terminalrc
+theme="$DATA/xfce4/terminal/colorschemes/glyph-lite-$mode.theme"
+if [ -f "$theme" ] && have xfce4-terminal && have python3; then
+  python3 - "$theme" "$CONF/xfce4/terminal/terminalrc" <<'PY'
+import configparser, os, sys
+src, rc = sys.argv[1:3]
+s = configparser.RawConfigParser(); s.optionxform = str; s.read(src)
+c = configparser.RawConfigParser(); c.optionxform = str; c.read(rc)
+if not c.has_section("Configuration"): c.add_section("Configuration")
+for k, v in s.items("Scheme"):
+    if k != "Name": c.set("Configuration", k, v)
+c.set("Configuration", "ColorUseTheme", "FALSE")
+os.makedirs(os.path.dirname(rc), exist_ok=True)
+with open(rc, "w") as f: c.write(f, space_around_delimiters=False)
+PY
+fi
+
+# GTK colors (only if enabled at install time)
+if [ -f "$STATE/gtk-enabled" ]; then
+  for v in 3.0 4.0; do
+    [ -f "$CONF/gtk-$v/glyph-gtk-$mode.css" ] && cp -f "$CONF/gtk-$v/glyph-gtk-$mode.css" "$CONF/gtk-$v/gtk.css"
+  done
+fi
+
+echo "$mode" > "$STATE/mode"; echo "$style" > "$STATE/style"
+echo "Glyph Lite: $mode ($style)"

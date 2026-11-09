@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "System Information",
+    "Description": "CPU, RAM and disk as dot rings. Polls /proc every 3 seconds, nothing else.",
+    "Icon": "utilities-system-monitor",
+    "Id": "org.glyphlite.dotmeters",
+    "License": "MIT",
+    "Name": "Glyph Dot Meters",
+    "Version": "1.0.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

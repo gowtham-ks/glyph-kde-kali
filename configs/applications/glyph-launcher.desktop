@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Glyph Launcher
+Comment=Dot-matrix rofi application launcher
+Exec=rofi -show drun -show-icons -theme glyph
+Icon=system-search
+Terminal=false
+Categories=System;Utility;
+Keywords=launcher;rofi;glyph;

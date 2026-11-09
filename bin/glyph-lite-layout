@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# glyph-lite-layout - add (or undo) the Glyph top bar and dock in a running Plasma 6 session.
+#   glyph-lite-layout apply | reapply | restore | status
+#   (edit the look first with: glyph-lite-customize layout ...)
+set -u
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/glyph-lite/layout"
+RC="$CONF/plasma-org.kde.plasma.desktop-appletsrc"
+JS="$DATA/glyph-lite/layout/glyph-layout.js"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+eval_script() {
+  local js; js="$(cat "$JS")"
+  for q in qdbus6 qdbus-qt6 qdbus; do
+    if have "$q"; then "$q" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$js"; return $?; fi
+  done
+  if have dbus-send; then
+    dbus-send --session --dest=org.kde.plasmashell --type=method_call --print-reply \
+      /PlasmaShell org.kde.PlasmaShell.evaluateScript string:"$js"; return $?
+  fi
+  echo "Need qdbus6 or dbus-send." >&2; return 1
+}
+
+case "${1:-}" in
+  apply)
+    pgrep -x plasmashell >/dev/null || { echo "plasmashell is not running: run this inside a Plasma session." >&2; exit 1; }
+    [ -f "$JS" ] || { echo "Layout script missing: run ./install.sh first." >&2; exit 1; }
+    [ -d "$DATA/plasma/plasmoids/org.glyphlite.island" ] || echo "Note: the Glyph Island widget is not installed; the bar will lack it." >&2
+    if [ -f "$STATE/appletsrc.bak" ]; then
+      echo "The Glyph layout is already applied. To change it, run: glyph-lite-layout reapply" >&2; exit 1
+    fi
+    mkdir -p "$STATE"
+    if [ -f "$RC" ]; then cp -a "$RC" "$STATE/appletsrc.bak"; else : > "$STATE/appletsrc.bak"; fi
+    eval_script >/dev/null && echo "Added the Glyph top bar and dock. Undo: glyph-lite-layout restore" || { echo "Plasma refused the script." >&2; exit 1; }
+    ;;
+  restore)
+    [ -f "$STATE/appletsrc.bak" ] || { echo "No backup found: nothing to restore. You can also remove the panels by hand (right-click a panel > Edit Mode > Remove)." >&2; exit 1; }
+    if have kquitapp6; then kquitapp6 plasmashell >/dev/null 2>&1; else pkill -x plasmashell; fi
+    sleep 2
+    if [ -s "$STATE/appletsrc.bak" ]; then cp -a "$STATE/appletsrc.bak" "$RC"; else rm -f "$RC"; fi
+    rm -f "$STATE/appletsrc.bak"
+    (have kstart && kstart plasmashell >/dev/null 2>&1) || (nohup plasmashell >/dev/null 2>&1 &)
+    echo "Restored your previous panels."
+    ;;
+  reapply)
+    "$0" restore || exit 1
+    sleep 5
+    exec "$0" apply
+    ;;
+  status)
+    if [ -f "$STATE/appletsrc.bak" ]; then echo "layout applied (backup present)"; else echo "layout not applied"; fi
+    ;;
+  *) echo "usage: glyph-lite-layout apply|reapply|restore|status"; exit 2 ;;
+esac

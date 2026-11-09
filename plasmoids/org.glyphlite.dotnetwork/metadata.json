@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "System Information",
+    "Description": "Download and upload speed from /proc/net/dev.",
+    "Icon": "network-wired",
+    "Id": "org.glyphlite.dotnetwork",
+    "License": "MIT",
+    "Name": "Glyph Dot Network",
+    "Version": "1.2.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

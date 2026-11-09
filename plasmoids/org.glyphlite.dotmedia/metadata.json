@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "Multimedia",
+    "Description": "Now playing and controls through playerctl.",
+    "Icon": "multimedia-player",
+    "Id": "org.glyphlite.dotmedia",
+    "License": "MIT",
+    "Name": "Glyph Dot Media",
+    "Version": "1.2.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

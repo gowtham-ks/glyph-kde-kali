@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Authors": [{ "Name": "Glyph Lite" }],
+    "Category": "Date and Time",
+    "Description": "A 5x7 dot-matrix clock that follows the color scheme.",
+    "Icon": "preferences-system-time",
+    "Id": "org.glyphlite.dotclock",
+    "License": "MIT",
+    "Name": "Glyph Dot Clock",
+    "Version": "1.0.0"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0"
+}
