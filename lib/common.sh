@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for install.sh / uninstall.sh (sourced, not executed).
 
+# shellcheck disable=SC2034
 GL_CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 GL_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
 GL_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/glyph-lite"
@@ -34,7 +35,8 @@ track_file() {
   [ "$DRY_RUN" = 1 ] && return 0
   tracked "$f" && return 0
   if [ -e "$f" ]; then
-    local b="$GL_BACKUP/$(printf '%s' "$f" | tr '/' '_')"
+    local b
+    b="$GL_BACKUP/$(printf '%s' "$f" | tr '/' '_')"
     cp -a "$f" "$b"
     printf 'file|%s|%s\n' "$f" "$b" >> "$GL_MANIFEST"
   else
@@ -48,7 +50,8 @@ track_dir() {
   [ "$DRY_RUN" = 1 ] && return 0
   tracked "$d" && return 0
   if [ -e "$d" ]; then
-    local b="$GL_BACKUP/$(printf '%s' "$d" | tr '/' '_')"
+    local b
+    b="$GL_BACKUP/$(printf '%s' "$d" | tr '/' '_')"
     cp -a "$d" "$b"
     printf 'dirbak|%s|%s\n' "$d" "$b" >> "$GL_MANIFEST"
   else
@@ -93,6 +96,7 @@ refresh_plasma_cache() {
 
 # Sets DESK (plasma|xfce|gnome|other|unknown), SESSION_TYPE, PLASMA_VER, PLASMA_MAJOR, REMOTE (0/1).
 detect_desktop() {
+  # shellcheck disable=SC2034
   SESSION_TYPE="${XDG_SESSION_TYPE:-unknown}"
   local cur="${XDG_CURRENT_DESKTOP:-}"
   cur="$(printf '%s' "$cur" | tr '[:upper:]' '[:lower:]')"
